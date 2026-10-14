@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Gateway</title>
+<style>
+  :root {
+    --bg: #faf9f7; --surface: #ffffff; --ink: #1c1b19; --muted: #8a867f; --line: #ebe8e3;
+    --accent: #3d5a4c; --reserve: #c9b98f; --danger: #b4483c; --ok: #4a7a5c;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141413; --surface: #1c1c1a; --ink: #ecebe8; --muted: #8d8a84; --line: #2a2a27;
+            --accent: #8fb9a1; --reserve: #a8986e; --danger: #e07a6e; --ok: #8fb9a1; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  main { max-width: 760px; margin: 0 auto; padding: 72px 24px 96px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 48px; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .dot.up { background: var(--ok); }
+  h2 { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  section { margin-bottom: 56px; }
+  input, textarea, select, button { font: inherit; color: inherit; }
+  .field { display: flex; gap: 8px; }
+  input, textarea, select {
+    width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 14px; outline: none; transition: border-color .15s;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--muted); }
+  input { font-family: var(--mono); font-size: 13px; }
+  textarea { resize: vertical; min-height: 88px; }
+  select { width: auto; cursor: pointer; }
+  button {
+    background: var(--ink); color: var(--bg); border: 0; border-radius: 10px; padding: 11px 18px;
+    font-weight: 500; cursor: pointer; white-space: nowrap; transition: opacity .15s;
+  }
+  button:hover { opacity: .85; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.ghost { background: transparent; color: var(--muted); padding: 11px 4px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .err { color: var(--danger); }
+  .hidden { display: none !important; }
+
+  .hero { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .hero .big { font-size: 44px; font-weight: 300; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .hero .of { color: var(--muted); }
+  .keyname { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .keyname code { font-family: var(--mono); }
+  .meter { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; display: flex; margin: 18px 0 10px; }
+  .meter i { display: block; height: 100%; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+  .meter .spent { background: var(--accent); }
+  .meter .reserved { background: var(--reserve); }
+  .legend { display: flex; gap: 20px; font-size: 13px; color: var(--muted); }
+  .legend b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .legend .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stat { padding: 20px 0; }
+  .stat + .stat { padding-left: 20px; border-left: 1px solid var(--line); }
+  .stat .v { font-size: 22px; font-weight: 400; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--muted); padding: 0 0 10px; font-size: 12px; }
+  td { padding: 11px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12px; }
+  td .sub { color: var(--muted); font-size: 12px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--ok); }
+  .pill.error, .pill.expired { color: var(--danger); }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; border-top: 1px solid var(--line); }
+
+  .composer .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .answer { margin-top: 20px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; white-space: pre-wrap; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  footer { font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; display: flex; justify-content: space-between; align-items: center; }
+  footer a { color: inherit; }
+  @media (max-width: 600px) {
+    main { padding-top: 40px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(3) { padding-left: 0; border-left: 0; }
+    .hide-sm { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>LLM Gateway <span>/ usage</span></h1>
+    <div class="status"><i class="dot" id="dot"></i><span id="health">checking…</span></div>
+  </header>
+
+  <section id="auth">
+    <h2>Virtual key</h2>
+    <form class="field" id="keyForm" autocomplete="off">
+      <input id="keyInput" type="password" placeholder="gw_…" spellcheck="false" aria-label="Gateway key">
+      <button type="submit">View usage</button>
+    </form>
+    <p class="hint" id="keyHint">The key stays in this tab only and is sent only to this gateway.</p>
+  </section>
+
+  <div id="dash" class="hidden">
+    <section>
+      <div class="hero"><span class="big" id="spent">₹0</span><span class="of" id="budget"></span></div>
+      <div class="keyname" id="keyname"></div>
+      <div class="meter"><i class="spent" id="mSpent"></i><i class="reserved" id="mReserved"></i></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--accent)"></i>spent <b id="lSpent"></b></span>
+        <span><i class="sw" style="background:var(--reserve)"></i>reserved <b id="lReserved"></b></span>
+        <span>remaining <b id="lRemaining"></b></span>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><div class="v" id="sReq">0</div><div class="l">requests</div></div>
+      <div class="stat"><div class="v" id="sOk">0</div><div class="l">succeeded</div></div>
+      <div class="stat"><div class="v" id="sIn">0</div><div class="l">input tokens</div></div>
+      <div class="stat"><div class="v" id="sOut">0</div><div class="l">output tokens</div></div>
+    </section>
+
+    <section class="composer">
+      <h2>Try a request</h2>
+      <form id="chatForm">
+        <textarea id="prompt" placeholder="Ask something…" required></textarea>
+        <div class="row">
+          <select id="model" aria-label="Model">
+            <option value="auto">auto</option>
+            <option value="cheap">cheap</option>
+            <option value="capable">capable</option>
+          </select>
+          <span style="flex:1"></span>
+          <button type="submit" id="send">Send</button>
+        </div>
+      </form>
+      <div id="answerBox" class="hidden">
+        <div class="answer" id="answer"></div>
+        <div class="meta" id="meta"></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>By model</h2>
+      <table>
+        <thead><tr><th>Model</th><th class="num">Requests</th><th class="num hide-sm">Tokens</th><th class="num">Cost</th></tr></thead>
+        <tbody id="models"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Recent requests</h2>
+      <table>
+        <thead><tr><th>Request</th><th class="hide-sm">Route</th><th class="num">Tokens</th><th class="num">Cost</th></tr></thead>
+        <tbody id="recent"></tbody>
+      </table>
+    </section>
+
+    <footer>
+      <span id="updated"></span>
+      <button class="ghost" id="forget" type="button">Forget key</button>
+    </footer>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let key = sessionStorage.getItem("gw_key") || "";
+
+  const inr = (v) => {
+    v = Number(v) || 0;
+    if (v === 0) return "₹0";
+    if (v < 1) return "₹" + v.toFixed(4);
+    return "₹" + v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const num = (v) => (Number(v) || 0).toLocaleString("en-IN");
+  const ago = (iso) => {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+  };
+  // All dynamic values go through textContent: model output and error strings are untrusted.
+  const el = (tag, opts = {}, ...kids) => {
+    const n = document.createElement(tag);
+    if (opts.cls) n.className = opts.cls;
+    if (opts.text != null) n.textContent = opts.text;
+    kids.forEach((k) => k && n.append(k));
+    return n;
+  };
+
+  // A redeploy or free-tier wake-up makes the first check fail briefly; retry before
+  // declaring the gateway unreachable, and keep re-checking so the badge never goes stale.
+  async function health(attempt = 0) {
+    try {
+      const r = await fetch("/healthz", { cache: "no-store" });
+      const j = await r.json();
+      $("dot").classList.toggle("up", j.status === "ok");
+      $("health").textContent = j.status === "ok" ? "operational" : "degraded";
+    } catch {
+      $("dot").classList.remove("up");
+      if (attempt < 4) {
+        $("health").textContent = "connecting…";
+        setTimeout(() => health(attempt + 1), 1500 * 2 ** attempt);
+      } else {
+        $("health").textContent = "unreachable";
+      }
+    }
+  }
+
+  async function load() {
+    const r = await fetch("/v1/usage", { headers: { authorization: "Bearer " + key } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error?.message || "request failed");
+    render(j);
+  }
+
+  function render({ key: k, totals: t, by_model, recent }) {
+    $("auth").classList.add("hidden");
+    $("dash").classList.remove("hidden");
+
+    $("spent").textContent = inr(k.spent_inr);
+    $("budget").textContent = "of " + inr(k.budget_inr);
+    $("keyname").replaceChildren(document.createTextNode(k.name + " · "), el("code", { text: k.key_prefix + "…" }),
+      document.createTextNode(k.status === "active" ? "" : " · " + k.status));
+    const pct = (v) => k.budget_inr > 0 ? Math.min(100, (v / k.budget_inr) * 100) + "%" : "0%";
+    $("mSpent").style.width = pct(k.spent_inr);
+    $("mReserved").style.width = pct(k.reserved_inr);
+    $("lSpent").textContent = inr(k.spent_inr);
+    $("lReserved").textContent = inr(k.reserved_inr);
+    $("lRemaining").textContent = inr(k.remaining_inr);
+
+    $("sReq").textContent = num(t.requests);
+    $("sOk").textContent = num(t.ok);
+    $("sIn").textContent = num(t.input_tokens);
+    $("sOut").textContent = num(t.output_tokens);
+
+    $("models").replaceChildren(...(by_model.length ? by_model.map((m) => el("tr", {},
+      el("td", {}, el("div", { text: m.model }), el("div", { cls: "sub", text: m.provider })),
+      el("td", { cls: "num", text: num(m.requests) }),
+      el("td", { cls: "num hide-sm", text: num(m.input_tokens + m.output_tokens) }),
+      el("td", { cls: "num", text: inr(m.cost_inr) }),
+    )) : [el("tr", {}, Object.assign(el("td", { cls: "empty", text: "No requests yet." }), { colSpan: 4 }))]));
+
+    $("recent").replaceChildren(...(recent.length ? recent.map((e) => el("tr", {},
+      el("td", {},
+        el("div", {}, el("span", { cls: "pill " + e.status, text: e.status }), document.createTextNode("  " + (e.model || e.requested_model))),
+        el("div", { cls: "sub", text: ago(e.created_at) + (e.latency_ms != null ? " · " + num(e.latency_ms) + " ms" : "") + (e.attempts > 1 ? " · " + e.attempts + " attempts" : "") }),
+        e.error ? el("div", { cls: "sub err", text: e.error.slice(0, 140) }) : null),
+      el("td", { cls: "hide-sm" }, el("div", { cls: "sub", text: e.route_reason || "" })),
+      el("td", { cls: "num", text: num(e.input_tokens) + " / " + num(e.output_tokens) }),
+      el("td", { cls: "num", text: inr(e.cost_inr) }),
+    )) : [el("tr", {}, Object.assign(el("td", { cls: "empty", text: "No requests yet." }), { colSpan: 4 }))]));
+
+    $("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+  }
+
+  $("keyForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    key = $("keyInput").value.trim();
+    if (!key) return;
+    try {
+      await load();
+      sessionStorage.setItem("gw_key", key);
+      $("keyInput").value = "";
+    } catch (err) {
+      $("keyHint").textContent = err.message;
+      $("keyHint").classList.add("err");
+    }
+  });
+
+  $("chatForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const btn = $("send");
+    btn.disabled = true; btn.textContent = "Sending…";
+    $("answerBox").classList.remove("hidden");
+    $("answer").textContent = "…";
+    $("meta").replaceChildren();
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+        body: JSON.stringify({ model: $("model").value, messages: [{ role: "user", content: $("prompt").value }] }),
+      });
+      const j = await r.json();
+      const ms = Math.round(performance.now() - t0);
+      if (!r.ok) {
+        $("answer").textContent = j.error?.message || "Request failed";
+        $("answer").classList.add("err");
+        $("meta").append(el("span", { text: "HTTP " + r.status }), el("span", { text: j.error?.type || "" }), el("span", { text: ms + " ms" }));
+      } else {
+        $("answer").classList.remove("err");
+        $("answer").textContent = j.choices[0].message.content || "(empty: the model used its whole token budget thinking)";
+        const h = (n) => r.headers.get("x-gateway-" + n);
+        $("meta").append(
+          el("span", { text: j.model }),
+          el("span", { text: h("route-reason") }),
+          el("span", { text: h("attempts") + (h("attempts") === "1" ? " attempt" : " attempts") }),
+          el("span", { text: num(j.usage.prompt_tokens) + " in / " + num(j.usage.completion_tokens) + " out" }),
+          el("span", { text: inr(h("cost-inr")) }),
+          el("span", { text: ms + " ms" }),
+        );
+      }
+      await load();
+    } catch (err) {
+      $("answer").textContent = err.message;
+      $("answer").classList.add("err");
+    } finally {
+      btn.disabled = false; btn.textContent = "Send";
+    }
+  });
+
+  $("forget").addEventListener("click", () => {
+    sessionStorage.removeItem("gw_key");
+    key = "";
+    $("dash").classList.add("hidden");
+    $("auth").classList.remove("hidden");
+    $("keyHint").textContent = "Key forgotten.";
+    $("keyHint").classList.remove("err");
+  });
+
+  health();
+  setInterval(() => health(), 30_000);
+  if (key) load().catch(() => { sessionStorage.removeItem("gw_key"); key = ""; });
+})();
+</script>
+</body>
+</html>
